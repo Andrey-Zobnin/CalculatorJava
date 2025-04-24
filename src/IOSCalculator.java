@@ -2,17 +2,28 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
 import java.text.DecimalFormat;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Random;
 
 public class IOSCalculator extends JFrame {
     private JTextField display;
+    private JTextField expressionDisplay;
+    private JLabel angleModeLabel;
     private double currentNumber = 0;
     private double storedNumber = 0;
     private String currentOperation = "";
     private boolean newInput = true;
-    private boolean isRadians = false; // По умолчанию градусы
+    private boolean isRadians = false;
     private DecimalFormat df = new DecimalFormat("#.##########");
-    private double memory = 0; // Память калькулятора
+    private double memory = 0;
+    private String currentExpression = "";
+
+    // Caches for optimization
+    private Map<Double, Double> sinCache = new HashMap<>();
+    private Map<Double, Double> cosCache = new HashMap<>();
+    private Map<Double, Double> tanCache = new HashMap<>();
+    private Map<String, Double> powerCache = new HashMap<>();
 
     public IOSCalculator() {
         createUI();
@@ -22,56 +33,73 @@ public class IOSCalculator extends JFrame {
         setTitle("Scientific Calculator");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setResizable(false);
-        getRootPane().setBorder(BorderFactory.createLineBorder(new Color(100, 100, 100), 1));
+        getRootPane().setBorder(BorderFactory.createLineBorder(new Color(60, 60, 60), 2));
 
-        // Главная панель
         JPanel mainPanel = new JPanel(new BorderLayout());
         mainPanel.setBackground(Color.BLACK);
-        mainPanel.setBorder(BorderFactory.createEmptyBorder(20, 10, 10, 10));
+        mainPanel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
 
-        // Дисплей
+        // Display panel
+        JPanel displayPanel = new JPanel(new BorderLayout());
+        displayPanel.setBackground(Color.BLACK);
+
+        expressionDisplay = new JTextField();
+        expressionDisplay.setHorizontalAlignment(JTextField.RIGHT);
+        expressionDisplay.setFont(new Font("Helvetica Neue", Font.PLAIN, 20));
+        expressionDisplay.setEditable(false);
+        expressionDisplay.setBackground(Color.BLACK);
+        expressionDisplay.setForeground(new Color(150, 150, 150));
+        expressionDisplay.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
+        displayPanel.add(expressionDisplay, BorderLayout.NORTH);
+
         display = new JTextField("0");
         display.setHorizontalAlignment(JTextField.RIGHT);
-        display.setFont(new Font("Helvetica Neue", Font.PLAIN, 48));
+        display.setFont(new Font("Helvetica Neue", Font.BOLD, 48));
         display.setEditable(false);
         display.setBackground(Color.BLACK);
         display.setForeground(Color.WHITE);
-        display.setBorder(BorderFactory.createEmptyBorder());
-        mainPanel.add(display, BorderLayout.NORTH);
+        display.setBorder(BorderFactory.createEmptyBorder(5, 5, 15, 5));
+        displayPanel.add(display, BorderLayout.CENTER);
 
-        // Панель кнопок
-        JPanel buttonPanel = new JPanel(new GridLayout(6, 5, 10, 10));
+        // Status panel
+        JPanel statusPanel = new JPanel(new BorderLayout());
+        statusPanel.setBackground(Color.BLACK);
+        angleModeLabel = new JLabel(isRadians ? "RAD" : "DEG");
+        angleModeLabel.setFont(new Font("Helvetica Neue", Font.PLAIN, 14));
+        angleModeLabel.setForeground(new Color(150, 150, 150));
+        angleModeLabel.setHorizontalAlignment(JLabel.RIGHT);
+        statusPanel.add(angleModeLabel, BorderLayout.EAST);
+        statusPanel.setBorder(BorderFactory.createEmptyBorder(0, 5, 5, 5));
+        displayPanel.add(statusPanel, BorderLayout.SOUTH);
+
+        mainPanel.add(displayPanel, BorderLayout.NORTH);
+
+        // Button panel
+        JPanel buttonPanel = new JPanel(new GridLayout(7, 5, 10, 10));
         buttonPanel.setBackground(Color.BLACK);
 
-        // Кнопки для научного калькулятора
         String[][] buttonLabels = {
-                {"C", "AC", "m+", "m-", "mr"},
+                {"2nd", "Deg/Rad", "m+", "m-", "mr"},
                 {"mc", "Rand", "(", ")", "÷"},
-                {"7", "8", "9", "×", "sin"},
-                {"4", "5", "6", "-", "cos"},
-                {"1", "2", "3", "+", "tan"},
-                {"0", ".", "=", "Rad/Deg", "√"}
+                {"x²", "x³", "10^x", "e^x", "sin"},
+                {"7", "8", "9", "×", "cos"},
+                {"4", "5", "6", "-", "tan"},
+                {"1", "2", "3", "+", "√"},
+                {"±", "0", ".", "=", "AC"}
         };
 
-        for (int row = 0; row < buttonLabels.length; row++) {
-            for (int col = 0; col < buttonLabels[row].length; col++) {
-                String label = buttonLabels[row][col];
-                if (label.isEmpty()) continue;
-
-                JButton button = createIOSButton(label);
+        for (String[] row : buttonLabels) {
+            for (String label : row) {
+                JButton button = createButton(label);
                 button.addActionListener(new ButtonClickListener());
-                buttonPanel.add(button);
 
-                // Особое оформление для кнопки 0
                 if (label.equals("0")) {
-                    buttonPanel.remove(button);
                     JPanel zeroPanel = new JPanel(new BorderLayout());
                     zeroPanel.setBackground(Color.BLACK);
                     zeroPanel.add(button, BorderLayout.CENTER);
-                    GridBagConstraints gbc = new GridBagConstraints();
-                    gbc.gridwidth = 2;
-                    gbc.fill = GridBagConstraints.BOTH;
-                    buttonPanel.add(zeroPanel, gbc);
+                    buttonPanel.add(zeroPanel);
+                } else {
+                    buttonPanel.add(button);
                 }
             }
         }
@@ -79,278 +107,282 @@ public class IOSCalculator extends JFrame {
         mainPanel.add(buttonPanel, BorderLayout.CENTER);
         add(mainPanel);
         pack();
-        setSize(500, 600);
+        setSize(500, 700);
         setLocationRelativeTo(null);
     }
 
-    private JButton createIOSButton(String label) {
+    private JButton createButton(String label) {
         JButton button = new JButton(label);
         button.setFocusPainted(false);
         button.setBorderPainted(false);
-        button.setFont(new Font("Helvetica Neue", Font.PLAIN, 24));
+        button.setFont(new Font("Helvetica Neue", Font.PLAIN, 20));
 
-        // Цвета кнопок как в iOS
-        if (isDigitButton(label)) {
-            button.setBackground(new Color(51, 51, 51));
-            button.setForeground(Color.WHITE);
-        } else if (isFunctionButton(label)) {
-            button.setBackground(new Color(165, 165, 165));
-            button.setForeground(Color.BLACK);
-        } else {
-            button.setBackground(new Color(255, 159, 11));
-            button.setForeground(Color.WHITE);
-        }
+        // Create final copy for inner class
+        final Color buttonBgColor = determineButtonColor(label);
+        button.setBackground(buttonBgColor);
+        button.setForeground(Color.WHITE);
+        button.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
 
-        // Стиль при наведении
         button.addMouseListener(new MouseAdapter() {
-            @Override
             public void mouseEntered(MouseEvent e) {
-                button.setContentAreaFilled(false);
-                button.setOpaque(true);
-                Color bg = button.getBackground();
-                button.setBackground(new Color(
-                        Math.min(bg.getRed() + 30, 255),
-                        Math.min(bg.getGreen() + 30, 255),
-                        Math.min(bg.getBlue() + 30, 255)
-                ));
+                button.setBackground(brightenColor(buttonBgColor));
             }
 
-            @Override
             public void mouseExited(MouseEvent e) {
-                button.setContentAreaFilled(false);
-                button.setOpaque(true);
-                if (isDigitButton(label)) {
-                    button.setBackground(new Color(51, 51, 51));
-                } else if (isFunctionButton(label)) {
-                    button.setBackground(new Color(165, 165, 165));
-                } else {
-                    button.setBackground(new Color(255, 159, 11));
-                }
+                button.setBackground(buttonBgColor);
             }
         });
-
-        // Круглая форма для кнопок
-        button.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-        button.setPreferredSize(new Dimension(70, 70));
 
         return button;
     }
 
-    private boolean isDigitButton(String label) {
-        return label.matches("[0-9.]");
+    private Color determineButtonColor(String label) {
+        if (label.matches("AC|mc|mr|m\\+|m\\-")) {
+            return new Color(165, 165, 165);
+        } else if (label.matches("÷|×|\\-|\\+|√|=")) {
+            return new Color(255, 159, 11);
+        } else if (label.matches("2nd|Deg/Rad|sin|cos|tan|x²|x³|10^x|e^x")) {
+            return new Color(70, 70, 70);
+        }
+        return new Color(51, 51, 51);
     }
 
-    private boolean isFunctionButton(String label) {
-        return label.equals("C") || label.equals("AC") || label.equals("m+") || label.equals("m-") ||
-                label.equals("mr") || label.equals("mc") || label.equals("Rand") || label.equals("Rad/Deg");
+    private Color brightenColor(Color color) {
+        int r = Math.min(color.getRed() + 30, 255);
+        int g = Math.min(color.getGreen() + 30, 255);
+        int b = Math.min(color.getBlue() + 30, 255);
+        return new Color(r, g, b);
     }
 
     private class ButtonClickListener implements ActionListener {
         public void actionPerformed(ActionEvent e) {
-            String command = ((JButton) e.getSource()).getText();
+            JButton source = (JButton) e.getSource();
+            String command = source.getText();
 
-            if (command.matches("[0-9]")) {
-                handleNumberInput(command);
-            } else if (command.equals(".")) {
-                handleDecimalPoint();
-            } else if (command.matches("[÷×+\\-]")) {
-                handleOperation(command);
-            } else if (command.equals("=")) {
-                handleEquals();
-            } else if (command.equals("C")) {
-                handleClear();
-            } else if (command.equals("AC")) {
-                handleAllClear();
-            } else if (command.equals("+/-")) {
-                handleSignChange();
-            } else if (command.equals("%")) {
-                handlePercentage();
-            } else if (command.equals("m+")) {
-                handleMemoryAdd();
-            } else if (command.equals("m-")) {
-                handleMemorySubtract();
-            } else if (command.equals("mr")) {
-                handleMemoryRecall();
-            } else if (command.equals("mc")) {
-                handleMemoryClear();
-            } else if (command.equals("Rand")) {
-                handleRandom();
-            } else if (command.equals("Rad/Deg")) {
-                handleRadDegToggle();
-            } else if (command.equals("sin")) {
-                handleSin();
-            } else if (command.equals("cos")) {
-                handleCos();
-            } else if (command.equals("tan")) {
-                handleTan();
-            } else if (command.equals("√")) {
-                handleSquareRoot();
+            updateExpression(command);
+
+            switch (command) {
+                case "0": case "1": case "2": case "3": case "4":
+                case "5": case "6": case "7": case "8": case "9":
+                    handleNumber(command);
+                    break;
+
+                case ".":
+                    handleDecimal();
+                    break;
+
+                case "+": case "-": case "×": case "÷":
+                    handleOperator(command);
+                    break;
+
+                case "=":
+                    handleEquals();
+                    break;
+
+                case "AC":
+                    handleAllClear();
+                    break;
+
+                case "±":
+                    handleSignChange();
+                    break;
+
+                case "√":
+                    handleSquareRoot();
+                    break;
+
+                case "x²":
+                    handlePower(2);
+                    break;
+
+                case "x³":
+                    handlePower(3);
+                    break;
+
+                case "10^x":
+                    handlePower(10);
+                    break;
+
+                case "e^x":
+                    handleExponential();
+                    break;
+
+                case "sin": case "cos": case "tan":
+                    handleTrigFunction(command);
+                    break;
+
+                case "Deg/Rad":
+                    toggleAngleUnit();
+                    break;
+
+                case "Rand":
+                    generateRandom();
+                    break;
+
+                case "m+": case "m-": case "mr": case "mc":
+                    handleMemory(command);
+                    break;
             }
         }
 
-        private void handleNumberInput(String number) {
+        private void updateExpression(String command) {
+            if (command.matches("[0-9]|\\.")) {
+                currentExpression += command;
+            } else if (command.matches("[+\\-×÷]")) {
+                currentExpression += " " + command + " ";
+            } else if (command.equals("=")) {
+                currentExpression += " = ";
+            }
+            expressionDisplay.setText(currentExpression);
+        }
+
+        private void handleNumber(String number) {
             if (newInput) {
                 display.setText(number);
                 newInput = false;
             } else {
-                if (display.getText().equals("0")) {
-                    display.setText(number);
-                } else {
-                    display.setText(display.getText() + number);
-                }
+                display.setText(display.getText() + number);
             }
             currentNumber = Double.parseDouble(display.getText());
         }
 
-        private void handleDecimalPoint() {
-            if (newInput) {
-                display.setText("0.");
-                newInput = false;
-            } else if (!display.getText().contains(".")) {
+        private void handleDecimal() {
+            if (!display.getText().contains(".")) {
                 display.setText(display.getText() + ".");
+                newInput = false;
             }
         }
 
-        private void handleOperation(String op) {
-            if (!currentOperation.isEmpty()) {
-                calculate();
-            }
+        private void handleOperator(String op) {
+            if (!currentOperation.isEmpty()) calculate();
             storedNumber = currentNumber;
             currentOperation = op;
             newInput = true;
         }
 
         private void handleEquals() {
-            if (!currentOperation.isEmpty()) {
-                calculate();
-                currentOperation = "";
-            }
-            newInput = true;
-        }
-
-        private void handleClear() {
-            display.setText("0");
-            currentNumber = 0;
+            if (!currentOperation.isEmpty()) calculate();
+            currentOperation = "";
             newInput = true;
         }
 
         private void handleAllClear() {
             display.setText("0");
+            expressionDisplay.setText("");
             currentNumber = 0;
             storedNumber = 0;
             currentOperation = "";
+            currentExpression = "";
             newInput = true;
         }
 
         private void handleSignChange() {
-            if (currentNumber != 0) {
-                currentNumber = -currentNumber;
-                display.setText(df.format(currentNumber));
-            }
-        }
-
-        private void handlePercentage() {
-            if (currentNumber != 0) {
-                currentNumber = currentNumber / 100;
-                display.setText(df.format(currentNumber));
-            }
-        }
-
-        private void handleMemoryAdd() {
-            memory += currentNumber;
-        }
-
-        private void handleMemorySubtract() {
-            memory -= currentNumber;
-        }
-
-        private void handleMemoryRecall() {
-            display.setText(df.format(memory));
-            currentNumber = memory;
-            newInput = true;
-        }
-
-        private void handleMemoryClear() {
-            memory = 0;
-        }
-
-        private void handleRandom() {
-            Random rand = new Random();
-            currentNumber = rand.nextDouble();
-            display.setText(df.format(currentNumber));
-            newInput = true;
-        }
-
-        private void handleRadDegToggle() {
-            isRadians = !isRadians;
-            display.setText(isRadians ? "Rad" : "Deg");
-        }
-
-        private void handleSin() {
-            double radians = isRadians ? currentNumber : Math.toRadians(currentNumber);
-            currentNumber = Math.sin(radians);
-            display.setText(df.format(currentNumber));
-            newInput = true;
-        }
-
-        private void handleCos() {
-            double radians = isRadians ? currentNumber : Math.toRadians(currentNumber);
-            currentNumber = Math.cos(radians);
-            display.setText(df.format(currentNumber));
-            newInput = true;
-        }
-
-        private void handleTan() {
-            double radians = isRadians ? currentNumber : Math.toRadians(currentNumber);
-            currentNumber = Math.tan(radians);
-            display.setText(df.format(currentNumber));
-            newInput = true;
+            currentNumber = -currentNumber;
+            updateDisplay();
         }
 
         private void handleSquareRoot() {
             if (currentNumber >= 0) {
                 currentNumber = Math.sqrt(currentNumber);
-                display.setText(df.format(currentNumber));
-                newInput = true;
+                updateDisplay();
             } else {
-                display.setText("Error");
-                handleClear();
+                showError();
+            }
+        }
+
+        private void handlePower(int exponent) {
+            currentNumber = cachedPower(currentNumber, exponent);
+            updateDisplay();
+        }
+
+        private void handleExponential() {
+            currentNumber = Math.exp(currentNumber);
+            updateDisplay();
+        }
+
+        private void handleTrigFunction(String func) {
+            double angle = isRadians ? currentNumber : Math.toRadians(currentNumber);
+            switch (func) {
+                case "sin": currentNumber = cachedSin(angle); break;
+                case "cos": currentNumber = cachedCos(angle); break;
+                case "tan": currentNumber = cachedTan(angle); break;
+            }
+            updateDisplay();
+        }
+
+        private void toggleAngleUnit() {
+            isRadians = !isRadians;
+            angleModeLabel.setText(isRadians ? "RAD" : "DEG");
+        }
+
+        private void generateRandom() {
+            currentNumber = new Random().nextDouble();
+            updateDisplay();
+        }
+
+        private void handleMemory(String operation) {
+            switch (operation) {
+                case "m+": memory += currentNumber; break;
+                case "m-": memory -= currentNumber; break;
+                case "mr": currentNumber = memory; updateDisplay(); break;
+                case "mc": memory = 0; break;
             }
         }
 
         private void calculate() {
-            switch (currentOperation) {
-                case "+":
-                    currentNumber = storedNumber + currentNumber;
-                    break;
-                case "-":
-                    currentNumber = storedNumber - currentNumber;
-                    break;
-                case "×":
-                    currentNumber = storedNumber * currentNumber;
-                    break;
-                case "÷":
-                    if (currentNumber != 0) {
+            try {
+                switch (currentOperation) {
+                    case "+": currentNumber = storedNumber + currentNumber; break;
+                    case "-": currentNumber = storedNumber - currentNumber; break;
+                    case "×": currentNumber = storedNumber * currentNumber; break;
+                    case "÷":
+                        if (currentNumber == 0) throw new ArithmeticException();
                         currentNumber = storedNumber / currentNumber;
-                    } else {
-                        display.setText("Error");
-                        handleClear();
-                        return;
-                    }
-                    break;
+                        break;
+                }
+                updateDisplay();
+            } catch (ArithmeticException ex) {
+                showError();
             }
+        }
+
+        private void updateDisplay() {
             display.setText(df.format(currentNumber));
             newInput = true;
         }
+
+        private void showError() {
+            display.setText("Error");
+            newInput = true;
+            currentNumber = 0;
+            storedNumber = 0;
+            currentOperation = "";
+        }
+    }
+
+    // Cached methods
+    private double cachedSin(double angle) {
+        return sinCache.computeIfAbsent(angle, Math::sin);
+    }
+
+    private double cachedCos(double angle) {
+        return cosCache.computeIfAbsent(angle, Math::cos);
+    }
+
+    private double cachedTan(double angle) {
+        return tanCache.computeIfAbsent(angle, Math::tan);
+    }
+
+    private double cachedPower(double base, double exponent) {
+        String key = base + "^" + exponent;
+        return powerCache.computeIfAbsent(key, k -> Math.pow(base, exponent));
     }
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
             try {
                 UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-
-                IOSCalculator calculator = new IOSCalculator();
-                calculator.setVisible(true);
+                new IOSCalculator().setVisible(true);
             } catch (Exception e) {
                 e.printStackTrace();
             }
