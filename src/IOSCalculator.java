@@ -2,6 +2,7 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
 import java.text.DecimalFormat;
+import java.util.Random;
 
 public class IOSCalculator extends JFrame {
     private JTextField display;
@@ -9,14 +10,16 @@ public class IOSCalculator extends JFrame {
     private double storedNumber = 0;
     private String currentOperation = "";
     private boolean newInput = true;
+    private boolean isRadians = false; // По умолчанию градусы
     private DecimalFormat df = new DecimalFormat("#.##########");
+    private double memory = 0; // Память калькулятора
 
     public IOSCalculator() {
         createUI();
     }
 
     private void createUI() {
-        setTitle("iOS Calculator");
+        setTitle("Scientific Calculator");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setResizable(false);
         getRootPane().setBorder(BorderFactory.createLineBorder(new Color(100, 100, 100), 1));
@@ -29,7 +32,7 @@ public class IOSCalculator extends JFrame {
         // Дисплей
         display = new JTextField("0");
         display.setHorizontalAlignment(JTextField.RIGHT);
-        display.setFont(new Font("Helvetica Neue", Font.PLAIN, 72));
+        display.setFont(new Font("Helvetica Neue", Font.PLAIN, 48));
         display.setEditable(false);
         display.setBackground(Color.BLACK);
         display.setForeground(Color.WHITE);
@@ -37,16 +40,17 @@ public class IOSCalculator extends JFrame {
         mainPanel.add(display, BorderLayout.NORTH);
 
         // Панель кнопок
-        JPanel buttonPanel = new JPanel(new GridLayout(5, 4, 10, 10));
+        JPanel buttonPanel = new JPanel(new GridLayout(6, 5, 10, 10));
         buttonPanel.setBackground(Color.BLACK);
 
-        // Кнопки в порядке iOS калькулятора
+        // Кнопки для научного калькулятора
         String[][] buttonLabels = {
-                {"C", "+/-", "%", "÷"},
-                {"7", "8", "9", "×"},
-                {"4", "5", "6", "-"},
-                {"1", "2", "3", "+"},
-                {"0", "", ".", "="}
+                {"C", "AC", "m+", "m-", "mr"},
+                {"mc", "Rand", "(", ")", "÷"},
+                {"7", "8", "9", "×", "sin"},
+                {"4", "5", "6", "-", "cos"},
+                {"1", "2", "3", "+", "tan"},
+                {"0", ".", "=", "Rad/Deg", "√"}
         };
 
         for (int row = 0; row < buttonLabels.length; row++) {
@@ -58,6 +62,7 @@ public class IOSCalculator extends JFrame {
                 button.addActionListener(new ButtonClickListener());
                 buttonPanel.add(button);
 
+                // Особое оформление для кнопки 0
                 if (label.equals("0")) {
                     buttonPanel.remove(button);
                     JPanel zeroPanel = new JPanel(new BorderLayout());
@@ -74,7 +79,7 @@ public class IOSCalculator extends JFrame {
         mainPanel.add(buttonPanel, BorderLayout.CENTER);
         add(mainPanel);
         pack();
-        setSize(350, 550);
+        setSize(500, 600);
         setLocationRelativeTo(null);
     }
 
@@ -82,7 +87,7 @@ public class IOSCalculator extends JFrame {
         JButton button = new JButton(label);
         button.setFocusPainted(false);
         button.setBorderPainted(false);
-        button.setFont(new Font("Helvetica Neue", Font.PLAIN, 28));
+        button.setFont(new Font("Helvetica Neue", Font.PLAIN, 24));
 
         // Цвета кнопок как в iOS
         if (isDigitButton(label)) {
@@ -136,12 +141,13 @@ public class IOSCalculator extends JFrame {
     }
 
     private boolean isFunctionButton(String label) {
-        return label.equals("C") || label.equals("+/-") || label.equals("%");
+        return label.equals("C") || label.equals("AC") || label.equals("m+") || label.equals("m-") ||
+                label.equals("mr") || label.equals("mc") || label.equals("Rand") || label.equals("Rad/Deg");
     }
 
     private class ButtonClickListener implements ActionListener {
         public void actionPerformed(ActionEvent e) {
-            String command = ((JButton)e.getSource()).getText();
+            String command = ((JButton) e.getSource()).getText();
 
             if (command.matches("[0-9]")) {
                 handleNumberInput(command);
@@ -153,10 +159,32 @@ public class IOSCalculator extends JFrame {
                 handleEquals();
             } else if (command.equals("C")) {
                 handleClear();
+            } else if (command.equals("AC")) {
+                handleAllClear();
             } else if (command.equals("+/-")) {
                 handleSignChange();
             } else if (command.equals("%")) {
                 handlePercentage();
+            } else if (command.equals("m+")) {
+                handleMemoryAdd();
+            } else if (command.equals("m-")) {
+                handleMemorySubtract();
+            } else if (command.equals("mr")) {
+                handleMemoryRecall();
+            } else if (command.equals("mc")) {
+                handleMemoryClear();
+            } else if (command.equals("Rand")) {
+                handleRandom();
+            } else if (command.equals("Rad/Deg")) {
+                handleRadDegToggle();
+            } else if (command.equals("sin")) {
+                handleSin();
+            } else if (command.equals("cos")) {
+                handleCos();
+            } else if (command.equals("tan")) {
+                handleTan();
+            } else if (command.equals("√")) {
+                handleSquareRoot();
             }
         }
 
@@ -165,7 +193,11 @@ public class IOSCalculator extends JFrame {
                 display.setText(number);
                 newInput = false;
             } else {
-                display.setText(display.getText() + number);
+                if (display.getText().equals("0")) {
+                    display.setText(number);
+                } else {
+                    display.setText(display.getText() + number);
+                }
             }
             currentNumber = Double.parseDouble(display.getText());
         }
@@ -199,19 +231,91 @@ public class IOSCalculator extends JFrame {
         private void handleClear() {
             display.setText("0");
             currentNumber = 0;
+            newInput = true;
+        }
+
+        private void handleAllClear() {
+            display.setText("0");
+            currentNumber = 0;
             storedNumber = 0;
             currentOperation = "";
             newInput = true;
         }
 
         private void handleSignChange() {
-            currentNumber = -currentNumber;
-            display.setText(df.format(currentNumber));
+            if (currentNumber != 0) {
+                currentNumber = -currentNumber;
+                display.setText(df.format(currentNumber));
+            }
         }
 
         private void handlePercentage() {
-            currentNumber = currentNumber / 100;
+            if (currentNumber != 0) {
+                currentNumber = currentNumber / 100;
+                display.setText(df.format(currentNumber));
+            }
+        }
+
+        private void handleMemoryAdd() {
+            memory += currentNumber;
+        }
+
+        private void handleMemorySubtract() {
+            memory -= currentNumber;
+        }
+
+        private void handleMemoryRecall() {
+            display.setText(df.format(memory));
+            currentNumber = memory;
+            newInput = true;
+        }
+
+        private void handleMemoryClear() {
+            memory = 0;
+        }
+
+        private void handleRandom() {
+            Random rand = new Random();
+            currentNumber = rand.nextDouble();
             display.setText(df.format(currentNumber));
+            newInput = true;
+        }
+
+        private void handleRadDegToggle() {
+            isRadians = !isRadians;
+            display.setText(isRadians ? "Rad" : "Deg");
+        }
+
+        private void handleSin() {
+            double radians = isRadians ? currentNumber : Math.toRadians(currentNumber);
+            currentNumber = Math.sin(radians);
+            display.setText(df.format(currentNumber));
+            newInput = true;
+        }
+
+        private void handleCos() {
+            double radians = isRadians ? currentNumber : Math.toRadians(currentNumber);
+            currentNumber = Math.cos(radians);
+            display.setText(df.format(currentNumber));
+            newInput = true;
+        }
+
+        private void handleTan() {
+            double radians = isRadians ? currentNumber : Math.toRadians(currentNumber);
+            currentNumber = Math.tan(radians);
+            display.setText(df.format(currentNumber));
+            newInput = true;
+        }
+
+        private void handleSquareRoot() {
+            if (currentNumber >= 0) {
+                currentNumber = Math.sqrt(currentNumber);
+                display.setText(df.format(currentNumber));
+                newInput = true;
+            } else {
+                display.setText("Error");
+                handleClear();
+            }
         }
 
         private void calculate() {
@@ -230,6 +334,7 @@ public class IOSCalculator extends JFrame {
                         currentNumber = storedNumber / currentNumber;
                     } else {
                         display.setText("Error");
+                        handleClear();
                         return;
                     }
                     break;
